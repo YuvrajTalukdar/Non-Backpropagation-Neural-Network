@@ -1,18 +1,11 @@
-#include<iostream>
-#include<string.h>
+#include "mainwindow.h"
+#include <QApplication>
 
-#include"core_start.h"
-
-using namespace std;
-
-int main()
+int main(int argc, char *argv[])
 {
-    int test_train_predict;
-    float data_division;
-    //core_starter();  
-    string file_name="NOT_AVAILABLE",network_save_file_name="NOT_AVAILABLE";
-    menu(file_name,test_train_predict,data_division,network_save_file_name); 
-    if(test_train_predict!=-1)
-    {   core_starter(file_name,test_train_predict,data_division,network_save_file_name);}
-    return 0;
+    QApplication a(argc, argv);
+    MainWindow w;
+    w.show();
+
+    return a.exec();
 }

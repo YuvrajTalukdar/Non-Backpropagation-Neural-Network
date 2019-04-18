@@ -1,28 +1,35 @@
 /*
 core class
 */
-
+//#define _GNU_SOURCE
 #include<iostream>
 #include<vector>
 #include<fstream>
 #include<sys/stat.h>
 #include<string>
+#include<string.h>
 #include<algorithm>
 #include<math.h>
 #include<stdlib.h>
 #include<time.h>
-#include<pthread.h>
-#include<dirent.h>
-#include<unistd.h>
-#include<sys/ioctl.h>//for the terminal size
-#include"neuron_and_ann_class.h"
+//#include<pthread.h>//for linux threads
+#include<thread>
+#include<windows.h>
+#include<algorithm>//for strcasestr
+#include<functional>//for strcasestr
+#include<cctype>//for strcasestr
 
-typedef void * (*THREADFUNCPTR)(void *);
+#include<QDirIterator>
+#include<QDir>
+#include<qdebug.h>
+
+#include"neuron_and_ann_class.h"
+#include"data_package_class.h"//should be removed
 
 using namespace std;
 
-bool display_iterations=false;//iteration display switch for debugging the code
-bool pds=true;//progress_display_system for displaying the progress bar
+static bool display_iterations=false;//iteration display switch for debugging the code
+//static bool pds=true;//progress_display_system for displaying the progress bar
 //int fg=2;//for the checker
 struct shared_block_data//required for 
 {
@@ -31,7 +38,8 @@ struct shared_block_data//required for
     int no_of_c_datapacks_completed=0;//required for training progress bar
     int total_c_datapacks;//required for training progress bar
 
-}shared_block_data_obj;
+};
+inline shared_block_data shared_block_data_obj;//lnline for migw 64 bit and static for mingw 32 bit. The 32 bit version dont support inline feature for c++17 for the progress bar dont work if compiled for 32 bit
 
 struct datapack_structure_defination{
     int no_of_labels;
@@ -51,10 +59,13 @@ struct converted_data_pack{
     float upper_not_firing_constrain_rhs=3; //2,3
 };
 
- struct conflicting_data_id{
-            vector<int> id;
-            bool conflict_id_present=false;
-        };
+struct conflicting_data_id1
+{
+    bool conflict_id_present=false;
+    bool mother_fucking_bool[7];//this motherfucker is required to satisfy the 64 bit compiler
+    vector<int> id;
+    //bool conflicting_id_present=false;
+};
 
 class ratio_locker
 {
@@ -100,7 +111,8 @@ class ratio_locker
 
     bool is_locked()
     {   return lock_enabled;}
-}ratio_locker1;
+};
+static ratio_locker ratio_locker1;
 
 class modified_simplex_solver{
     private:
@@ -120,10 +132,6 @@ class modified_simplex_solver{
         vector<long double> theta;//no_of_rows-z_row
         vector<float> z_row;//no_of_columns
     };
-
-    class simplex_optimizer{
-
-    }s_optimizer;
 
     class make_solution_feasible{
 
@@ -349,7 +357,7 @@ class modified_simplex_solver{
             }
         }
 
-        conflicting_data_id conflict_id;
+        conflicting_data_id1 conflict_id;
 
         void conflicting_data_finder(simplex_table* st)
         {
@@ -501,7 +509,7 @@ class modified_simplex_solver{
         }
 
         public:
-        conflicting_data_id return_conflict_id_pack()
+        conflicting_data_id1 return_conflict_id_pack()
         {
             return conflict_id;
         }
@@ -717,7 +725,7 @@ class modified_simplex_solver{
         //needs modification
         feasible_solution_calculator.start(&st);
         //cout<<"data size2= "<<cdp->firing_data.size()<<endl;
-        conflicting_data_id conflict_id;
+        conflicting_data_id1 conflict_id;
         conflict_id=feasible_solution_calculator.return_conflict_id_pack();
 
         if(conflict_id.conflict_id_present==true)
@@ -959,12 +967,7 @@ class simplex_solver_data_preparation_class
         for(int a=0;a<cdp.size();a++)
         {
             shared_block_data_obj.no_of_c_datapacks_completed++;
-            //cout<<"\n\nfiring_label= "<<cdp[a].firing_label<<" firing_neuron_index= "<<cdp[a].firing_neuron_index;
-            //cout<<"\ncdp no= "<<a<<" out of "<<cdp.size();
-            /*if(fg==0)
-            {
-                cin>>fg;
-            }*/
+            //cout<<"\nno_fo_c_datapacks_completed= "<<shared_block_data_obj.no_of_c_datapacks_completed;
             lpp_solver1.start_solver(&cdp[a]);
             if(display_iterations==true)
             {
@@ -1155,6 +1158,23 @@ class core_class{
         }
         file1.close();
     }
+    
+    bool strcasestr(string str,string substr)
+    {
+        transform(str.begin(), str.end(), str.begin(),ptr_fun<int, int>(toupper));
+        transform(substr.begin(), substr.end(), substr.begin(),ptr_fun<int, int>(toupper));
+        if(str.find(substr) != string::npos)
+        {   return true;}
+        else 
+        {   return false;}
+    }
+
+    string workingdir() //checking required
+    {
+        char buf[256];
+        GetCurrentDirectoryA(256, buf);
+        return std::string(buf) + '\\';
+    }
 
     bool load_network_if_available(int core_aim=0,int core_no=0,bool file_name_received=false,string file_name="")
     {
@@ -1166,25 +1186,34 @@ class core_class{
         vector<float> elements;
         if(file_name_received==false)
         {        
-            //int core_aim=0, core_no=0;
-            struct dirent *de;  // Pointer for directory entry
-            // opendir() returns a pointer of DIR type. 
-            DIR *dr = opendir(".");
-            if (dr == NULL)  // opendir returns NULL if couldn't open directory
+            string tempstr=workingdir();
+            int dir_size=tempstr.size()*2;
+            char ch[2]={'\0'},dir[dir_size];
+            for(int a=0;a<strlen(dir);a++)
+            {   dir[a]={'\0'};}
+            for(int a=0;a<tempstr.length();a++)
             {
-                cout<<"Could not open current directory";
-                return false;
+                if(tempstr.at(a)=='\\')
+                {   tempstr[a]='/';}
+                ch[0]=tempstr.at(a);
+                ch[1]='\0';
+                strcat(dir,ch);
             }
-            char filename_sub_str[]="network";
+            cout<<dir;
+
+            char filename_sub_str[8]="network";
             vector<string> network_save_file_list;
             network_save_file_list.clear();
-            while ((de = readdir(dr)) != NULL)
+
+            QDir directory(dir);
+            QStringList files = directory.entryList(QStringList() << "*",QDir::Files);
+            foreach(QString filename, files)
             {
-                if(strcasestr(de->d_name,filename_sub_str))
-                {   network_save_file_list.push_back(de->d_name);}
+                string str=filename.toStdString();
+                if(strcasestr(str,filename_sub_str)==true)
+                {   network_save_file_list.push_back(str);}
             }
-            closedir(dr);    
-            //string required_save_filename;
+
             vector<ifstream> input_file_streams(network_save_file_list.size());
             for(int a=0;a<network_save_file_list.size();a++)
             {   input_file_streams[a].open(network_save_file_list[a],ios::in);}
@@ -1683,6 +1712,13 @@ class core_class{
             }
         }
         cdp.insert(cdp.end(),cdp_vect_temp.begin(),cdp_vect_temp.end());
+        string str_for_body="";
+        str_for_body.clear();
+        str_for_body.append("\n\ncdp size after erasing in big data handler = ");
+        str_for_body.append(to_string(cdp.size()));
+        str_for_body.append(", cdp_vect_temp size= ");
+        str_for_body.append(to_string(cdp_vect_temp.size()));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\n\ncdp size after erasing in big data handler = "<<cdp.size();
         cout<<", cdp_vect_temp size= "<<cdp_vect_temp.size();
         cdp_vect_temp.clear();
@@ -1733,11 +1769,17 @@ class core_class{
             }
         }
         cdp.insert(cdp.end(),cdp_vect_temp.begin(),cdp_vect_temp.end());
+        str_for_body.clear();
+        str_for_body.append("\ncdp size after stabilizing extreme ratios = ");
+        str_for_body.append(to_string(cdp.size()));
+        str_for_body.append(", cdp_vect_temp size= ");
+        str_for_body.append(to_string(cdp_vect_temp.size()));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\ncdp size after stabilizing extreme ratios = "<<cdp.size();
         cout<<", cdp_vect_temp size= "<<cdp_vect_temp.size();
     }
 
-    void simplex_solver_data_entry_point(vector<filtered_data> f_data_pack,datapack_structure_defination* ds,ann* network1)
+    void simplex_solver_data_entry_point(vector<filtered_data> f_data_pack,datapack_structure_defination* ds,ann* network1)//checking required threads
     {
         vector<converted_data_pack> c_datapacks;
         converted_data_pack c_datapack;
@@ -1745,10 +1787,21 @@ class core_class{
         int sum_total_training_data=0;
         for(int a=0;a<f_data_pack.size();a++)
         {   sum_total_training_data=sum_total_training_data+f_data_pack[a].data.size();}
+        string str_for_body="";
+        str_for_body.clear();
+        str_for_body.append("\nsize of training data set= ");
+        str_for_body.append(to_string(sum_total_training_data));
+        str_for_body.append("\n");
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\nsize of training data set= "<<sum_total_training_data<<endl;
         c_datapacks.clear(); //for asured cleaniness
         for(int a=0;a<f_data_pack.size();a++)
         {
+            str_for_body.clear();
+            str_for_body.append("packing data for label= ");
+            str_for_body.append(to_string(f_data_pack[a].label));
+            str_for_body.append("\n");
+            body_engine_communication_data_obj.add_message(str_for_body);
             cout<<"packing data for label= "<<f_data_pack[a].label<<endl;
             //determining the c_data_pack critical info
             int sum_total_not_firing_data=sum_total_training_data-f_data_pack[a].data.size();
@@ -1880,58 +1933,47 @@ class core_class{
                 }
             }
         }
+        str_for_body.clear();
+        str_for_body.append("finished packaging data in c_datapacks.");
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"finished packaging data in c_datapacks.";
+        str_for_body.clear();
+        str_for_body.append("\ntotal no of c_data_packs= ");
+        str_for_body.append(to_string(c_datapacks.size()));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\ntotal no of c_data_packs= "<<c_datapacks.size();
         big_c_datapack_handler(c_datapacks);//for handling c_datapack with huge data which may create full conlflict senarios.
+        str_for_body.clear();
+        str_for_body.append("\ntotal no of c_data_packs after big c_datapacks handling= ");
+        str_for_body.append(to_string(c_datapacks.size()));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\ntotal no of c_data_packs after big c_datapacks handling= "<<c_datapacks.size();
-        //displaying some stuff for checking if the module is working correctly or not
-        /*cout<<"\n\nif f_data_pack size is > "<<sum_total_training_data<<" than upper one is the size of data else vice versa\n\n";
-        int count2=0;
-        for(int a=0;a<ds->no_of_labels;a++)
-        {
-            int count1=0;
-            for(int b=0;b<c_datapacks.size();b++)
-            {
-                if(ds->elements[a]==c_datapacks[b].firing_label)
-                {
-                    count1++;
-                }
-            }
-            count2=count1+count2;
-            cout<<"\n\nf_Data_pack size= "<<f_data_pack[a].data.size();
-            cout<<"\ntotal firing data of label "<<ds->elements[a]<<" is = "<<c_datapacks[count2-2].firing_data.size()*(count1-1)+c_datapacks[count2-1].firing_data.size()+c_datapacks[count2-2].not_firing_data.size();
-            cout<<"\ntotal not firing data of label "<<ds->elements[a]<<" is = "<<c_datapacks[count2-2].not_firing_data.size()*(count1-1)+c_datapacks[count2-1].not_firing_data.size()+c_datapacks[count2-2].firing_data.size();
-        }*/
-        /*for(int a=0;a<ds->no_of_labels;a++)
-        {
-            int firing_data=0,not_firing_data=0,count1=0;
-            for(int b=0;b<c_datapacks.size();b++)
-            {
-                if(c_datapacks[b].firing_label==ds->elements[a])
-                {
-                    count1++;
-                    firing_data+=c_datapacks[b].firing_data.size();
-                    not_firing_data+=c_datapacks[b].not_firing_data.size();
-                }
-            }
-            cout<<"\n\ndata size = "<<count1;
-            cout<<"\ntotal firing data of label "<<ds->elements[a]<<" = "<<firing_data;
-            cout<<"\ntotal not firing data of label "<<ds->elements[a]<<" = "<<not_firing_data;
-        }*/
-        //this is the place for parallelization process.
-        //int required_no_of_threads;//=sysconf(_SC_NPROCESSORS_ONLN);//no of threads
-            //c_datapacks division
+        
         //required_no_of_threads=2;//15
         set_the_no_of_threads_required(c_datapacks.size());
         vector<vector<converted_data_pack>> c_datapacks_vector;
+        str_for_body.clear();
+        str_for_body.append("\narranging c_datapacks for ");
+        str_for_body.append(to_string(required_no_of_threads));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"\narranging c_datapacks for "<<required_no_of_threads<<" threads..........";
         c_data_packs_division_for_multi_threading(c_datapacks_vector,c_datapacks,required_no_of_threads);
-        point1:
+        //point1:
         if(required_no_of_threads!=c_datapacks_vector.size())
         {
-            cout<<"\n\nERROR!!! failed to set a valid number of threads. Try setting the value to "<<c_datapacks_vector.size();
-            set_the_no_of_threads_required(0,true);//here 0 is just a random value to make this function call work
-            goto point1;
+            str_for_body.clear();
+            str_for_body.append("\n\nERROR!!! failed to set a valid number of threads. Setting the value to ");
+            str_for_body.append(to_string(c_datapacks_vector.size()));                        
+            body_engine_communication_data_obj.add_message(str_for_body);
+
+            required_no_of_threads=c_datapacks_vector.size();
+            cout<<"\n\nERROR!!! failed to set a valid number of threads. Setting the value to "<<c_datapacks_vector.size();
+            //set_the_no_of_threads_required(0,true);//here 0 is just a random value to make this function call work
+            //goto point1;
+            str_for_body.clear();
+            str_for_body.append("\nSetting the no of threads to ");
+            str_for_body.append(to_string(required_no_of_threads));
+            body_engine_communication_data_obj.add_message(str_for_body);
         }       
         vector<simplex_solver_data_preparation_class> lpp_solver_vec;
         for(int a=0;a<c_datapacks_vector.size();a++)
@@ -1939,64 +1981,37 @@ class core_class{
             simplex_solver_data_preparation_class *lpp_solver=new simplex_solver_data_preparation_class(c_datapacks_vector[a],ds,network1);//initializing the obj of the class   
             lpp_solver_vec.push_back(*lpp_solver);
         }
-        vector<pthread_t> threadIds(required_no_of_threads);//thread declaration
-        pthread_t progress_display_thread;
-        vector<int> error(required_no_of_threads);
+        //vector<pthread_t> threadIds(required_no_of_threads);//thread declaration for linux
+        vector<thread*> thread_vec;//threads for windows
+        //pthread_t progress_display_thread;
+        //vector<int> error(required_no_of_threads);
+        str_for_body.clear();
+        str_for_body.append(" lpp_solver_vec size=");
+        str_for_body.append(to_string(lpp_solver_vec.size()));
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<" lpp_solver_vec size="<<lpp_solver_vec.size();
-        cin.ignore(1024, '\n');
-        cout << "\n\nPress enter to continue...";
-        cin.get();
+        //cin.ignore(1024, '\n');
+        //cout << "\n\nPress enter to continue...";
+        //cin.get();
         time_t begin=time(0);
         //lpp solvers will start now.........
         for(int a=0;a<required_no_of_threads;a++)
         {
-            error[a]=pthread_create(&threadIds[a], NULL, (THREADFUNCPTR) &simplex_solver_data_preparation_class::lp_solver,&lpp_solver_vec[a]);//thread creator
+            thread *t=new thread(&simplex_solver_data_preparation_class::lp_solver,&lpp_solver_vec[a]);//thread creator for windows
+            thread_vec.push_back(t);
         }
-        int progress_bar_error;
-        if(pds==true)
-        {   progress_bar_error=pthread_create(&progress_display_thread,NULL,(THREADFUNCPTR) &core_class::display_training_progress,NULL);}
-        for(int a=0;a<error.size();a++)
-        {
-            if(error[a])
-            {   cout << "\nThread "<<a<< " creation failed : " << strerror(error[a]);}
-        }
-        if(pds==true)
-        {
-            if(progress_bar_error)
-            {   cout<<"\nprogress bar thread creation failed!";}
-        }
-        for(int a=0;a<required_no_of_threads;a++)
-        {   error[a]=pthread_join(threadIds[a],NULL);}
-        if(pds==true)
-        {   progress_bar_error=pthread_join(progress_display_thread,NULL);}
-        time_t end=time(0);
-        cout<<"\ntime taken for training: "<<end-begin;
-    }
 
-    void display_training_progress()
-    {
-        while(shared_block_data_obj.no_of_c_datapacks_completed<shared_block_data_obj.total_c_datapacks)
-        {
-            float x=shared_block_data_obj.no_of_c_datapacks_completed,y=shared_block_data_obj.total_c_datapacks;
-            struct winsize w;
-            ioctl(0,TIOCGWINSZ,&w);
-            float percentage=(x/y)*100;
-            system("clear");    
-            cout<<"\nprogress: ";
-            float hl=w.ws_col/2;
-            float ratio=100/hl;
-            float pl=percentage*hl/100;
-            for(int a=0;a<hl;a++)
-            {
-                if(a<pl)
-                {   cout<<"#";}
-                else
-                {   cout<<".";}
-            }
-            cout<<"  "<<percentage<<"%";
-            cout<<"  "<<shared_block_data_obj.no_of_c_datapacks_completed<<" out of "<<shared_block_data_obj.total_c_datapacks<<" c_datapacks complete"<<endl<<endl;
-            sleep(1);
-        }
+        for(int a=0;a<required_no_of_threads;a++)
+        {   thread_vec[a]->join();}
+
+        time_t end=time(0);
+        body_engine_communication_data_obj.add_message("\nTASK COMPLETE");
+        str_for_body.clear();
+        str_for_body.append("\ntime taken for training: ");
+        str_for_body.append(to_string(end-begin));
+        str_for_body.append(" sec");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        cout<<"\ntime taken for training: "<<end-begin;
     }
 
     int size_of_c_datapacks_vector(vector<converted_data_pack> &c_datapacks)
@@ -2071,6 +2086,7 @@ class core_class{
 
     void train(data_package_class* data_pack,bool network_avail_status,int train_test_predict)//there cannot be a case of invalid network and data without labels.
     {
+        string str_for_body;
         datapack_analyzer(data_pack);//function checked!
         //filtering data according to labels
         filter(data_pack,train_test_predict);//f_train_data pack gets created here.
@@ -2080,43 +2096,61 @@ class core_class{
             {
                 if(train_test_predict==0)//only training
                 {
-                    cout<<"\nnetwork save file found. So training by batching without testing.";
+                    str_for_body.clear();
+                    str_for_body.append("\nnetwork save file found. So training by batching without testing.");
+                    body_engine_communication_data_obj.add_message(str_for_body);
                     simplex_solver_data_entry_point(f_train_data,&ds,&network1);
                     save_network();
-                    cout<<"\nnetwork saved";
+                    str_for_body.clear();
+                    str_for_body.append("\nnetwork saved");
+                    body_engine_communication_data_obj.add_message(str_for_body);
                 }
                 else if(train_test_predict==1)//training with testing 
                 {
-                    cout<<"\nnetwork save file found. So training by batching with testing.";
+                    str_for_body.clear();
+                    str_for_body.append("\nnetwork save file found. So training by batching with testing.");
+                    body_engine_communication_data_obj.add_message(str_for_body);
                     simplex_solver_data_entry_point(f_train_data,&ds,&network1);
                     save_network();
-                    cout<<"\nnetwork saved";
+                    str_for_body.clear();
+                    str_for_body.append("\nnetwork saved");
+                    body_engine_communication_data_obj.add_message(str_for_body);
                     test();
                 }
             }
             else
             {
                  //1. new variable is added to the data. Or adding new label.
-                 cout<<"ERROR!!!  The currently loaded network file is not associated with the currently loaded data \nfrom file you have selected as input source.";
+                str_for_body.clear();
+                str_for_body.append("ERROR!!!  The currently loaded network file is not associated with the currently loaded data \nfrom file you have selected as input source.");
+                body_engine_communication_data_obj.add_message(str_for_body);
             }
         }
         else if(network_avail_status==false)
         {
             if(train_test_predict==0)//only training
             {
-                cout<<"\nnetwork save file not found. Brand new training without testing.";
+                str_for_body.clear();
+                str_for_body.append("\nnetwork save file not found. Brand new training without testing.");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 network_structure_modifier();
                 simplex_solver_data_entry_point(f_train_data,&ds,&network1);
                 save_network();
-                cout<<"\nnetwork saved";
+                str_for_body.clear();
+                str_for_body.append("\nnetwork saved");
+                body_engine_communication_data_obj.add_message(str_for_body);
             }
             else if(train_test_predict==1)//training with testing 
             {
-                cout<<"\nnetwork save file not found. Brand new training with testing.";
+                str_for_body.clear();
+                str_for_body.append("\nnetwork save file not found. Brand new training with testing.");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 network_structure_modifier();
                 simplex_solver_data_entry_point(f_train_data,&ds,&network1);
                 save_network();
-                cout<<"\nnetwork saved";
+                str_for_body.clear();
+                str_for_body.append("\nnetwork saved");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 test();
             }
         }
@@ -2124,7 +2158,11 @@ class core_class{
 
     void test()//parameters not required now
     {
-        cout<<"\nTESTING PHASE"<<endl;
+        string str_for_body;
+        str_for_body.clear();
+        str_for_body.append("\nTESTING PHASE");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        cout<<"\nTESTING PHASE\n"<<endl;
         // format is yes and then no naswers.
         ofstream file1("weight_matrix.csv",ios::out);
         file1<<"path id,output_neuron_id,weight matrix: ,";
@@ -2140,6 +2178,9 @@ class core_class{
             file1<<"\n";
         }
         file1.close();
+        str_for_body.clear();
+        str_for_body.append("weight matrix saved\n");
+        body_engine_communication_data_obj.add_message(str_for_body);
         cout<<"weight matrix saved\n";
         //entering data to network.
         for(int a=0;a<test_data.data.size();a++)
@@ -2148,6 +2189,68 @@ class core_class{
             network1.enter_label_neuron_to_be_fired(test_data.labels[a],ds.elements);
             network1.propagate();
         }
+        network1.return_accuracy_details(body_engine_communication_data_obj.correct,
+                                         body_engine_communication_data_obj.incorrect,
+                                         body_engine_communication_data_obj.total,
+                                         body_engine_communication_data_obj.double_fire,
+                                         body_engine_communication_data_obj.not_all_fired,
+                                         body_engine_communication_data_obj.wronglyfired,
+                                         body_engine_communication_data_obj.accuracy);
+
+        str_for_body.clear();
+        str_for_body.append("\n\nRESULTS:\n");
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\ncorrect= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.correct));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\nincorrect= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.incorrect));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\ntotal= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.total));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\ndouble fired= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.double_fire));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\nnot at all fired= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.not_all_fired));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\nwrongly fired= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.wronglyfired));
+        body_engine_communication_data_obj.add_message(str_for_body);
+
+        str_for_body.clear();
+        str_for_body.append("\n\nAccuracy= ");
+        body_engine_communication_data_obj.add_message(str_for_body);
+        str_for_body.clear();
+        str_for_body.append(to_string(body_engine_communication_data_obj.accuracy));
+        str_for_body.append(" %");
+        body_engine_communication_data_obj.add_message(str_for_body);
+
         cout<<"accuracy= "<<network1.return_accuracy()<<endl;
     }
 
@@ -2198,7 +2301,7 @@ class core_class{
         }
     }
     
-    void predict_progress_bar()
+    /*void predict_progress_bar()
     {
         while(shared_block_data_obj.predict_progress_bar_numerator<shared_block_data_obj.predict_progress_bar_denominator)
         {
@@ -2225,7 +2328,7 @@ class core_class{
                 sleep(1);
             }
         }
-    }
+    }*/
 
     void predict(data_package_class* data_pack)
     {
@@ -2236,10 +2339,10 @@ class core_class{
         float label;
         shared_block_data_obj.predict_progress_bar_denominator=data_pack->data.size();
         
-        pthread_t predict_progress_bar_thread;
-        int predict_progress_bar_error;
-        if(pds==true)
-        {   predict_progress_bar_error=pthread_create(&predict_progress_bar_thread,NULL,(THREADFUNCPTR) &core_class::predict_progress_bar,NULL);}
+        //pthread_t predict_progress_bar_thread;
+        //int predict_progress_bar_error;
+        //if(pds==true)
+        //{   predict_progress_bar_error=pthread_create(&predict_progress_bar_thread,NULL,(THREADFUNCPTR) &core_class::predict_progress_bar,NULL);}
         
         for(int a=0;a<data_pack->data.size();a++)
         {
@@ -2260,92 +2363,245 @@ class core_class{
             out_stream<<":"<<label<<",\n";
             shared_block_data_obj.predict_progress_bar_numerator++;
         }
-        if(pds==true)
-        {   predict_progress_bar_error=pthread_join(predict_progress_bar_thread,NULL);}
+        //if(pds==true)
+        //{   predict_progress_bar_error=pthread_join(predict_progress_bar_thread,NULL);}
         //cout<<"accuracy= "<<network1.return_accuracy()<<endl;
         out_stream.close();
         cout<<"\nPrediction complete, check the file prediction_result.csv\n";
     }
 
-    void make_prediction_on_user_entered_data()
+    void make_prediction_on_user_entered_data()//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2@@@@@@@@@2
     {
-        system("clear");
-        char continue1='y';
-        vector<float> data_vector;
+        //function entering signal
+        //input data size
+        body_engine_communication_data_obj.size_of_input_data=network1.input_neuron_size();
+        body_engine_communication_data_obj.prediction_on_individual_data_function_reached=true;
         float label;
-        while(continue1=='y'||continue1=='Y')
+        string str_to_body;
+        while(body_engine_communication_data_obj.task_complete==false)
         {
-            cout<<"\nEnter the "<<network1.input_neuron_size()<<" digit data: \n";
-            for(int a=0;a<network1.input_neuron_size();a++)
-            {   
-                float data;
-                cout<<"a"<<a<<"= ";
-                cin>>data;
-                data_vector.push_back(data);
-            }
-
-            network1.enter_data_in_the_network(data_vector);
-            network1.reset_all_output_neurons();
-            //network1.enter_label_neuron_to_be_fired(data_pack->labels[a],network1.elements);
-            network1.propagate();
-            int fired_output_neuron_index=0;
-            for(int b=0;b<network1.output_neurons.size();b++)
+            //waiting for data
+            while(body_engine_communication_data_obj.data_entered==false)
             {
-                bool status=network1.output_neurons[b].return_fire_status();
-                if(status==true)
-                {   fired_output_neuron_index=b;}
+                Sleep(500);
+                if(body_engine_communication_data_obj.task_complete==true)
+                {   break;}
             }
-            label=network1.return_label_for_firing_neuron_index(fired_output_neuron_index);
-            cout<<"\nResult = "<<label<<endl;
-
-            data_vector.clear();
-            point1:
-            cout<<"\nDo you want to make prediction on another data? (y,n)";
-            cin>>continue1;
-            if(continue1!='N'&&continue1!='n'&&continue1!='y'&&continue1!='Y')
+            if(body_engine_communication_data_obj.task_complete==false)
             {
-                cout<<"\nWrong option!!!!";
-                goto point1;
+                //actual engine
+                network1.enter_data_in_the_network(body_engine_communication_data_obj.input_data);
+                network1.reset_all_output_neurons();
+                //network1.enter_label_neuron_to_be_fired(data_pack->labels[a],network1.elements);
+                network1.propagate();
+                int fired_output_neuron_index=0;
+                for(int b=0;b<network1.output_neurons.size();b++)
+                {
+                    bool status=network1.output_neurons[b].return_fire_status();
+                    if(status==true)
+                    {   fired_output_neuron_index=b;}
+                }
+                label=network1.return_label_for_firing_neuron_index(fired_output_neuron_index);
+                //result
+                body_engine_communication_data_obj.result=label;
+                str_to_body.clear();
+                str_to_body.append("\n\nResult for ");
+                for(int a=0;a<network1.input_neuron_size();a++)
+                {   str_to_body.append(to_string(body_engine_communication_data_obj.input_data[a]));
+                    str_to_body.append(",");
+                }
+                str_to_body.append(" is ");
+                str_to_body.append(to_string(label));
+                body_engine_communication_data_obj.add_message(str_to_body);
             }
-            //a menu should not have been in here.
+            body_engine_communication_data_obj.input_data.clear();
+            //to enable the pause next time
+            body_engine_communication_data_obj.data_entered=false;
+            //function exiting signal
+            body_engine_communication_data_obj_default.prediction_on_individual_data_function_reached=true;
         }
     }
 
     void set_the_no_of_threads_required(int no_of_c_datapacks_after_big_datapack_handling=0,bool tried_before=false)
     {
-        int no_of_physical_threads_in_cpu=sysconf(_SC_NPROCESSORS_ONLN);
+        //int no_of_physical_threads_in_cpu=sysconf(_SC_NPROCESSORS_ONLN);// for linux
+        int no_of_physical_threads_in_cpu=thread::hardware_concurrency();// for windows
+        SYSTEM_POWER_STATUS status;
+        GetSystemPowerStatus(&status);
+        int battery_available=(int)status.BatteryFlag;
         int prefered_no_of_threads=no_of_physical_threads_in_cpu+11;//for good speed in i5 7200
-        char option;
-        point1:
-        if(tried_before==false)
-        {
-            cout<<"\n\nDo you want to manually set the no of threads? (y,n): ";
-            cin>>option;
-        }
-        
-        if(tried_before==false && (option=='n' || option=='N'))
+
+        string str1;
+        str1.clear();
+        str1.append("\nwaiting for user input (set no of threads)....");
+        body_engine_communication_data_obj.add_message(str1);
+        cout<<"\nwaiting for user input (set no of threads)....";
+        body_engine_communication_data_obj.thread_selection_point_reached=true;
+        while(body_engine_communication_data_obj.no_of_threads_setting_mode==false)
+        {   Sleep(500);}
+        if(body_engine_communication_data_obj.thread_set_automatic==true)
         {
             if(no_of_c_datapacks_after_big_datapack_handling>prefered_no_of_threads)
             {   required_no_of_threads=prefered_no_of_threads;}
             else
             {   required_no_of_threads=2;}
         }
-        else if(option=='y' || option=='Y' || tried_before==true)
-        {
-            cout<<"\nSet the no of threads= ";
-            cin>>required_no_of_threads;
-        }
         else
+        {   required_no_of_threads=body_engine_communication_data_obj.set_no_of_threads;}
+        string str_for_body;
+        if(battery_available==1 && no_of_physical_threads_in_cpu<=4 && required_no_of_threads>4)
         {
-            cout<<"\nWrong option!!";
-            goto point1;
+            required_no_of_threads=no_of_physical_threads_in_cpu;
+            str_for_body.clear();
+            str_for_body.append("\nyour pc is not powerful enough so no of threads set to ");
+            str_for_body.append(to_string(required_no_of_threads));
+            str_for_body.append("\nthis process may take a lot of time....");
+            body_engine_communication_data_obj.add_message(str_for_body);
         }
+
     }
 
-    public:
+    class body_engine_communication_data
+    {
+        private:
+        bool message_ready=false;
+        vector<string> message;
+        //vector<string> message;
+        bool data_ready_for_reading=false;
+        unsigned int message_index=0;
+        int intdata;
+        bool intdata_ready=false;
+        char char_data;
+        bool char_data_ready=false;
+        float floatdata;
+        bool floatdata_ready=false;
+        public:
+        //make prediction on individual data
+        bool data_entered=false;
+        int size_of_input_data=0;
+        float result;
+        vector<float> input_data;
+        bool prediction_on_individual_data_function_reached=false;
+        //progress bar settings
+        bool progress_bar_display=false;
+        int progress_bar_value=0;
+
+        //entire work complete or not
+        bool task_complete=false;
+        //thread seter
+        bool no_of_threads_setting_mode=false;//stops the engine for the user entering the no of threads
+        bool thread_selection_point_reached=false;//notifies the body that the engine has reached the thread setting point
+        bool thread_set_automatic=false;
+        int set_no_of_threads=1;
+        //data
+        float accuracy=0;
+        int correct=0,incorrect=0,total=0,double_fire=0,not_all_fired=0,wronglyfired=0;
+
+        string display_message()
+        {
+            if(message_ready==true && message_index<message.size())
+            {
+                string str=message[message_index];
+                message_index++;
+                return str;
+            }
+            else
+            {   return "";}
+        }
+
+        void add_message(string str)
+        {
+            message_ready=false;
+            message.push_back(str);
+            message_ready=true;
+        }
+
+        void remove_message()
+        {
+            message_ready=false;
+            message.pop_back();
+            message_ready=true;
+        }
+
+        void send_data(int x)
+        {
+            intdata_ready=false;
+            intdata=x;
+            intdata_ready=true;
+        }
+
+        void send_data(char ch)
+        {
+            char_data_ready=false;
+            char_data=ch;
+            char_data_ready=true;
+        }
+
+        void send_data(float f)
+        {
+            floatdata_ready=false;
+            floatdata=f;
+            floatdata_ready=true;
+        }
+
+        void enable_reading_of_data(bool b)
+        {   data_ready_for_reading=b;}
+
+        int get_int_data()
+        {
+            if(data_ready_for_reading==true)
+            {   return intdata;}
+        }
+
+        char get_char_data()
+        {
+            if(data_ready_for_reading==true)
+            {   return char_data;}
+        }
+
+        float get_float_data()
+        {
+            if(data_ready_for_reading==true)
+            {   return floatdata;}
+        }
+    };
+    body_engine_communication_data body_engine_communication_data_obj_default;
+    public:   
+
+    void get_shared_block_data(int &datapacks_complete,int &total_c_datapacks,int &predict_numerator,int &predict_denominator)
+    {
+        datapacks_complete=shared_block_data_obj.no_of_c_datapacks_completed;
+        total_c_datapacks=shared_block_data_obj.total_c_datapacks;
+        predict_numerator=shared_block_data_obj.predict_progress_bar_numerator;
+        predict_denominator=shared_block_data_obj.predict_progress_bar_denominator;
+    }
+
+    void restore_body_engine_communication_data_obj()
+    {
+        body_engine_communication_data_obj.accuracy=body_engine_communication_data_obj_default.accuracy;
+        body_engine_communication_data_obj.task_complete=body_engine_communication_data_obj_default.task_complete;
+        body_engine_communication_data_obj.set_no_of_threads=body_engine_communication_data_obj_default.set_no_of_threads;
+        body_engine_communication_data_obj.thread_set_automatic=body_engine_communication_data_obj_default.thread_set_automatic;
+        body_engine_communication_data_obj.no_of_threads_setting_mode=body_engine_communication_data_obj_default.no_of_threads_setting_mode;
+        body_engine_communication_data_obj.thread_selection_point_reached=body_engine_communication_data_obj_default.thread_selection_point_reached;
+        body_engine_communication_data_obj.total=body_engine_communication_data_obj_default.total;
+        body_engine_communication_data_obj.correct=body_engine_communication_data_obj_default.correct;
+        body_engine_communication_data_obj.accuracy=body_engine_communication_data_obj_default.accuracy;
+        body_engine_communication_data_obj.incorrect=body_engine_communication_data_obj_default.incorrect;
+        body_engine_communication_data_obj.double_fire=body_engine_communication_data_obj_default.double_fire;
+        body_engine_communication_data_obj.wronglyfired=body_engine_communication_data_obj_default.wronglyfired;
+        body_engine_communication_data_obj.not_all_fired=body_engine_communication_data_obj_default.not_all_fired;
+        body_engine_communication_data_obj.progress_bar_display=body_engine_communication_data_obj_default.progress_bar_display;
+        body_engine_communication_data_obj.progress_bar_value=body_engine_communication_data_obj_default.progress_bar_display;
+        body_engine_communication_data_obj.data_entered=body_engine_communication_data_obj_default.data_entered;
+        body_engine_communication_data_obj.size_of_input_data=body_engine_communication_data_obj_default.size_of_input_data;
+        body_engine_communication_data_obj.prediction_on_individual_data_function_reached=body_engine_communication_data_obj_default.prediction_on_individual_data_function_reached;
+    }
+    body_engine_communication_data body_engine_communication_data_obj;
+
     void core_data_entry_point(data_package_class* data_pack,int train_test_predict,float &data_division1,string &network_save_file_name)//train_test_predict=1//train_test_predic is required for extra assurance
     {
-        //cout<<" datadiv= "<<data_division<<" train_test_predict= "<<train_test_predict<<" network_save_file_name= "<<network_save_file_name;
+        string str_for_body;
         if(train_test_predict==1)
         {   data_division=data_division1;}
         if(check_if_datapack_has_valid_labels(data_pack)==true && train_test_predict<2)//true
@@ -2355,24 +2611,40 @@ class core_class{
         }
         else if(train_test_predict==3)//making prediction on used entered individual data.
         {
-            bool network_load_status=load_network_if_available(0,0,true,network_save_file_name);
+            bool network_load_status=load_network_if_available(0,0,true,network_save_file_name);            
             if(network_load_status==true)
             {   
-                cout<<"Network successfully loaded";
+                str_for_body.clear();
+                str_for_body.append("Network successfully loaded");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 make_prediction_on_user_entered_data();
             }
             else
-            {   cout<<"ERROR!!! failed to load network from the network file.";}
+            {
+                str_for_body.clear();
+                str_for_body.append("ERROR!!! failed to load network from the network file.");
+                body_engine_communication_data_obj.add_message(str_for_body);
+            }
         }
         else
         {
             if(load_network_if_available(0,0,true,network_save_file_name)==true && train_test_predict==2)//network avail,vaild label not avail,predic mode
             {   
+                str_for_body.clear();
+                str_for_body.append("Prediction going on....");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 predict(data_pack);
+                str_for_body.clear();
+                str_for_body.append("\nprediction results daved in prediction_result.csv file");
+                body_engine_communication_data_obj.add_message(str_for_body);
                 //testing_for_each_label(data_pack);
             }
             else
             {   cout<<"Invalid option"<<endl;}//ERROR!!
         }
+        Sleep(1000);//to let the progress display system catch up
+        body_engine_communication_data_obj.task_complete=true;
+        //restore_body_engine_communication_data_obj();
+        cout<<"ending...";
     }
 };

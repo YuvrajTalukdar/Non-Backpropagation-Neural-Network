@@ -8,13 +8,15 @@ ANN class
 #include<string>
 #include<string.h>
 #include<math.h>
-#include<pthread.h>
+//#include<pthread.h>
+#include<thread>
+#include<mutex>
 
 using namespace std;
 
-int firing_point=90; //30 40
-
-pthread_mutex_t lock;
+static int firing_point=90; //30 40
+//pthread_mutex_t lock;//for linux
+static mutex mutexlocker;//for windows
 
 class neuron{
     private:
@@ -23,7 +25,8 @@ class neuron{
     bool fire_status=false;
     float data,fp;
     public:
-    
+    bool work_done=false;
+
     void set_neuron_identity(int i,bool i_id,bool o_id)
     {
         id=i;
@@ -74,7 +77,7 @@ class ann{
    
     float correct=0;
     int total=0;
-    
+
     public:
     vector<float> elements;
     void set_elements_vector(vector<float> e)
@@ -131,8 +134,8 @@ class ann{
 
     void create_new_path(vector<float> weight_matrix,int output_id)
     {
-        pthread_mutex_lock(&lock);
-        
+        //pthread_mutex_lock(&lock);//for linux
+        mutexlocker.lock();//for windows
         path_struct new_path;
         int id=path.size();
         if(id==0)
@@ -152,8 +155,8 @@ class ann{
         {   new_path.weight_matrix.push_back(weight_matrix[a]);}
 
         path.push_back(new_path);
-        
-        pthread_mutex_unlock(&lock);
+        mutexlocker.unlock();//for windows
+        //pthread_mutex_unlock(&lock);//for linux
     }
 
     int input_neuron_size()
@@ -372,6 +375,17 @@ class ann{
     float return_accuracy()
     {   cout<<"\ncorrect= "<<correct<<" incorrect= "<<total-correct<<" total= "<<total<<" double_fire= "<<double_fire<<" all_not_fired= "<<all_not_fired<<" wrongly_fired= "<<wrongly_fired<<endl;
         return accuracy;
+    }
+
+    void return_accuracy_details(int &correct,int &incorrect,int &total,int &double_fire,int &not_all_fired,int &wronglyfired,float &accuracy)
+    {
+        correct=this->correct;
+        incorrect=this->total-this->correct;
+        total=this->total;
+        double_fire=this->double_fire;
+        not_all_fired=this->all_not_fired;
+        wronglyfired=this->wrongly_fired;
+        accuracy=this->accuracy;
     }
 
     void reset_statistics()
