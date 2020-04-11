@@ -3,4 +3,6 @@ A new type of artificial neutral network designed to recognize patterns in data 
 
 Please read the setup instruction for installation guidance.
 
-# COPYRIGHT YUVRAJ TALUKDAR 2019
+
+Copyright (c) 2019, Yuvraj Talukdar All rights reserved.
+
